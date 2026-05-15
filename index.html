@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="3D Web Driving Simulator — explore a procedurally generated city in your browser.">
+  <title>Driving Simulator</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Main 3D canvas -->
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- HUD overlay (speedometer, minimap, etc.) -->
+  <div id="ui-overlay"></div>
+
+  <!-- Pause Menu Overlay -->
+  <div id="pause-menu" style="display:none;">
+    <div class="pause-container">
+      <h1 class="pause-title">⏸️ PAUSED</h1>
+      <button id="resume-btn" class="pause-btn resume-btn">▶ RESUME</button>
+      <button id="main-menu-btn" class="pause-btn menu-btn">🏠 MAIN MENU</button>
+    </div>
+  </div>
+
+  <!-- Main Menu Overlay -->
+  <div id="main-menu-screen">
+    <div class="menu-container">
+      
+      <!-- Sidebar / Navigation -->
+      <div class="menu-sidebar">
+        <h1 class="menu-title">🏙️ DRIVE SIM</h1>
+        <nav class="menu-nav">
+          <button class="nav-btn active" data-tab="play">PLAY</button>
+          <button class="nav-btn" data-tab="arsenal">ARSENAL</button>
+          <button class="nav-btn" data-tab="settings">SETTINGS</button>
+        </nav>
+      </div>
+
+      <!-- Content Area -->
+      <div class="menu-content">
+        
+        <!-- Tab 1: Play (Car Selector) -->
+        <div id="tab-play" class="tab-pane active">
+          <!-- The carSelector.js will inject its UI here -->
+          <div id="car-selector-container"></div>
+        </div>
+
+        <!-- Tab 2: Arsenal -->
+        <div id="tab-arsenal" class="tab-pane">
+          <h2 class="tab-title">ARSENAL</h2>
+          <div id="arsenal-grid" class="arsenal-grid"></div>
+        </div>
+
+        <!-- Tab 3: Settings -->
+        <div id="tab-settings" class="tab-pane">
+          <h2 class="tab-title">SETTINGS</h2>
+          
+          <div class="setting-row">
+            <label for="setting-fullscreen">Fullscreen Mode</label>
+            <label class="switch">
+              <input type="checkbox" id="setting-fullscreen">
+              <span class="slider round"></span>
+            </label>
+          </div>
+          
+          <div class="setting-row">
+            <label for="setting-sfx">SFX Volume</label>
+            <input type="range" id="setting-sfx" min="0" max="1" step="0.05" value="0.8">
+          </div>
+          
+          <div class="setting-row">
+            <label for="setting-music">Music Volume</label>
+            <input type="range" id="setting-music" min="0" max="1" step="0.05" value="0.5">
+          </div>
+          
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Game over overlay -->
+  <div id="game-over-screen">
+    <div id="game-over-title">GAME OVER</div>
+    <div id="game-over-stats"></div>
+    <button id="retry-btn">RETRY</button>
+  </div>
+
+  <!-- Level complete banner -->
+  <div id="level-complete-banner">LEVEL COMPLETE!</div>
+
+  <!-- Loading screen -->
+  <div id="loading-screen">
+    <span>Loading...</span>
+  </div>
+
+  <!-- Three.js from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+
+  <!-- Application scripts (order matters) -->
+  <script src="js/config.js" defer></script>
+  <script src="js/scene.js" defer></script>
+  <script src="js/city.js" defer></script>
+  <script src="js/carModels.js" defer></script>
+  <script src="js/controls.js" defer></script>
+  <script src="js/coins.js" defer></script>
+  <script src="js/police.js" defer></script>
+  <script src="js/save.js" defer></script>
+  <script src="js/weapons.js" defer></script>
+  <script src="js/car.js" defer></script>
+  <script src="js/camera.js" defer></script>
+  <script src="js/ui.js" defer></script>
+  <script src="js/carSelector.js" defer></script>
+  <script src="js/main.js" defer></script>
+
+</body>
+</html>
