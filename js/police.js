@@ -111,15 +111,26 @@ window.POLICE = {
 
     if (roads && roads.length > 0) {
       let bestScore = Infinity;
-      // Try random road positions, pick the one whose distance is closest to SPAWN_DISTANCE
-      for (let attempt = 0; attempt < 100; attempt++) {
-        const road = roads[Math.floor(Math.random() * roads.length)];
-        const rx = road.x + Math.random() * road.w;
-        const rz = road.z + Math.random() * road.h;
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const rx = -245 + Math.random() * 490;
+        const rz = -195 + Math.random() * 390;
+
+        // Must be on drivable ground
+        if (window.CITY && CITY.wallGrid) {
+          const gX = Math.floor((rx + CITY.mapHalfX) / CITY.gridSize);
+          const gZ = Math.floor((rz + CITY.mapHalfZ) / CITY.gridSize);
+          if (gX < 0 || gX >= CITY.gridColsX || gZ < 0 || gZ >= CITY.gridColsZ) continue;
+          if (CITY.wallGrid[gX + gZ * CITY.gridColsX] === 1) continue;
+          if (CITY.groundHeightGrid[gX + gZ * CITY.gridColsX] <= -9999) continue;
+        }
+
         const dist = Math.sqrt((rx - px) ** 2 + (rz - pz) ** 2);
         
-        // We want it to be as close to SPAWN_DISTANCE as possible
-        const score = Math.abs(dist - P.SPAWN_DISTANCE);
+        // Calculate dot product to see if spawn is in front of the player
+        const dot = (rx - px) * Math.sin(playerCar.heading) + (rz - pz) * Math.cos(playerCar.heading);
+        const frontPenalty = dot < 0 ? 1000 : 0; // Strongly penalize spawning in front
+
+        const score = Math.abs(dist - P.SPAWN_DISTANCE) + frontPenalty;
         if (score < bestScore) {
           bestScore = score;
           spawnX = rx;
@@ -128,11 +139,12 @@ window.POLICE = {
       }
     }
 
-    // Hard clamp spawn to map bounds to ensure it never spawns outside
-    spawnX = Math.max(-240, Math.min(240, spawnX));
-    spawnZ = Math.max(-240, Math.min(240, spawnZ));
+    // Hard clamp spawn to map bounds
+    spawnX = Math.max(-245, Math.min(245, spawnX));
+    spawnZ = Math.max(-195, Math.min(195, spawnZ));
 
-    mesh.position.set(spawnX, 0.65, spawnZ);
+    const spawnY = window.CITY && window.CITY.getRoadHeight ? window.CITY.getRoadHeight(spawnX, spawnZ) : 0.65;
+    mesh.position.set(spawnX, spawnY, spawnZ);
     SCENE.scene.add(mesh);
 
     this.policeCars.push({
@@ -298,25 +310,19 @@ window.POLICE = {
         const centerX = newX + Math.sin(pc.heading) * 2.5;
         const centerZ = newZ + Math.cos(pc.heading) * 2.5;
         let collided = false;
-        let hitBuilding = null;
 
-        const bound = 245;
-        if (centerX > bound || centerX < -bound || centerZ > bound || centerZ < -bound) {
+        const boundX = 245;
+        const boundZ = 195;
+        if (centerX > boundX || centerX < -boundX || centerZ > boundZ || centerZ < -boundZ) {
           collided = true;
         }
 
-        if (!collided && window.CITY && CITY.buildings) {
-          const carHW = 2.2;
-          const carHD = 4.2;
-          for (const b of CITY.buildings) {
-            const bHW = b.width / 2 + carHW;
-            const bHD = b.depth / 2 + carHD;
-            if (centerX > b.x - bHW && centerX < b.x + bHW &&
-                centerZ > b.z - bHD && centerZ < b.z + bHD) {
-              collided = true;
-              hitBuilding = b;
-              break;
-            }
+        // Buildings (check wall collision grid)
+        let hitBuilding = null;
+        if (!collided && window.CITY && CITY.checkWallCollision) {
+          hitBuilding = CITY.checkWallCollision(centerX, centerZ, 2.0); // Approx radius 2.0
+          if (hitBuilding) {
+            collided = true;
           }
         }
 
@@ -327,7 +333,7 @@ window.POLICE = {
           pc.heading = oldHeading;
           pc.speed *= 0.1;
           pc.lateralVel = 0;
-          
+
           // On collision: steer away from building/boundary
           if (hitBuilding) {
             // Nudge backwards to clear building collision box
@@ -340,7 +346,7 @@ window.POLICE = {
             let avAngle = bAngle - pc.heading;
             while (avAngle > Math.PI) avAngle -= Math.PI * 2;
             while (avAngle < -Math.PI) avAngle += Math.PI * 2;
-            
+
             pc.avoidDir = avAngle > 0 ? 1 : -1;
             pc.avoidTimer = 1.2;
           } else {
@@ -361,10 +367,11 @@ window.POLICE = {
 
       // Hard clamp to map bounds to ensure the car physically cannot leave the map
       pc.x = Math.max(-245, Math.min(245, pc.x));
-      pc.z = Math.max(-245, Math.min(245, pc.z));
+      pc.z = Math.max(-195, Math.min(195, pc.z));
 
       // Sync mesh
-      pc.mesh.position.set(pc.x, 0.65, pc.z);
+      const currentY = window.CITY && window.CITY.getRoadHeight ? window.CITY.getRoadHeight(pc.x, pc.z) : 0.65;
+      pc.mesh.position.set(pc.x, currentY, pc.z);
       pc.mesh.rotation.set(0, pc.heading, 0);
 
       // Wheel animation
@@ -575,17 +582,29 @@ window.POLICE = {
   _respawnOnRoad(pc, playerX, playerZ) {
     if (!pc) return;
 
-    const roads = CITY.roadNetwork;
-    if (!roads || roads.length === 0) return;
-
-    // Find a road position 40-80 units from player
+    // Find a drivable position 40-80 units from player
     let bestX = pc.x, bestZ = pc.z, bestScore = Infinity;
-    for (let i = 0; i < 50; i++) {
-      const road = roads[Math.floor(Math.random() * roads.length)];
-      const rx = road.x + Math.random() * road.w;
-      const rz = road.z + Math.random() * road.h;
+    for (let i = 0; i < 100; i++) {
+      const rx = -245 + Math.random() * 490;
+      const rz = -195 + Math.random() * 390;
+
+      // Must be on drivable ground
+      if (window.CITY && CITY.wallGrid) {
+        const gX = Math.floor((rx + CITY.mapHalfX) / CITY.gridSize);
+        const gZ = Math.floor((rz + CITY.mapHalfZ) / CITY.gridSize);
+        if (gX < 0 || gX >= CITY.gridColsX || gZ < 0 || gZ >= CITY.gridColsZ) continue;
+        if (CITY.wallGrid[gX + gZ * CITY.gridColsX] === 1) continue;
+        if (CITY.groundHeightGrid[gX + gZ * CITY.gridColsX] <= -9999) continue;
+      }
+
       const dist = Math.sqrt((rx - playerX) ** 2 + (rz - playerZ) ** 2);
-      const score = Math.abs(dist - 60);
+      
+      // Calculate dot product to see if spawn is in front of the player
+      const playerHeading = window.GAME && GAME.activeCar ? GAME.activeCar.heading : 0;
+      const dot = (rx - playerX) * Math.sin(playerHeading) + (rz - playerZ) * Math.cos(playerHeading);
+      const frontPenalty = dot < 0 ? 1000 : 0; // Strongly penalize spawning in front
+
+      const score = Math.abs(dist - 25) + frontPenalty;
       if (score < bestScore) {
         bestScore = score;
         bestX = rx;
@@ -593,8 +612,8 @@ window.POLICE = {
       }
     }
 
-    pc.x = Math.max(-240, Math.min(240, bestX));
-    pc.z = Math.max(-240, Math.min(240, bestZ));
+    pc.x = Math.max(-245, Math.min(245, bestX));
+    pc.z = Math.max(-195, Math.min(195, bestZ));
     pc.heading = Math.atan2(playerX - pc.x, playerZ - pc.z);
     pc.speed = 0;
     pc.lateralVel = 0;
@@ -676,7 +695,7 @@ window.POLICE = {
 
   _stopSiren() {
     if (this._sirenOsc) {
-      try { this._sirenOsc.stop(); } catch (_) {}
+      try { this._sirenOsc.stop(); } catch (_) { }
       this._sirenOsc = null;
     }
     if (this._sirenGain) {

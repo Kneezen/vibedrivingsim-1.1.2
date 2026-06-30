@@ -884,3 +884,75 @@ input:checked + .slider:before {
   color: #ff8844;
 }
 
+/* ===== How to Play Modal ===== */
+#how-to-play-modal {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  background: rgba(10, 10, 20, 0.95);
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.how-to-play-container {
+  background: rgba(20, 20, 35, 0.95);
+  border: 1px solid #00ffcc;
+  border-radius: 12px;
+  padding: 40px;
+  width: 600px;
+  max-width: 90%;
+  box-shadow: 0 0 30px rgba(0, 255, 204, 0.2);
+  text-align: center;
+  color: #ddd;
+}
+
+.htp-title {
+  color: #00ffcc;
+  font-family: monospace;
+  font-size: 32px;
+  margin-top: 0;
+  margin-bottom: 20px;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px rgba(0, 255, 204, 0.5);
+}
+
+.htp-content {
+  text-align: left;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 30px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.htp-content p {
+  margin: 10px 0;
+}
+
+.htp-content strong {
+  color: #fff;
+}
+
+.htp-btn {
+  background: #00ffcc;
+  color: #1a1a2e;
+  border: none;
+  padding: 14px 40px;
+  font-size: 20px;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: 2px;
+  transition: all 0.2s ease;
+  font-family: monospace;
+}
+
+.htp-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 20px rgba(0, 255, 204, 0.4);
+}

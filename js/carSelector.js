@@ -68,6 +68,13 @@ window.CAR_SELECTOR = {
 
     // ── Start button ─────────────────────────────────
     document.getElementById('start-btn').addEventListener('click', () => {
+      // Show the tutorial modal instead of starting right away
+      document.getElementById('how-to-play-modal').style.display = 'flex';
+    });
+
+    // ── Let's Play button (Modal) ────────────────────
+    document.getElementById('lets-play-btn').addEventListener('click', () => {
+      document.getElementById('how-to-play-modal').style.display = 'none';
       if (this.onStart) {
         this.onStart(CONFIG.CARS[this.selectedCarIndex]);
       }
@@ -98,6 +105,18 @@ window.CAR_SELECTOR = {
         }
       });
     });
+
+    // ── Reset Progress ───────────────────────────────
+    const resetBtn = document.getElementById('reset-progress-btn');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        if (window.SAVE) {
+          SAVE.clearSave();
+          this.buildArsenalTab();
+          if (window.UI) UI.showNotification('Progress reset! All weapons locked.', 3000);
+        }
+      });
+    }
   },
 
   // ────────────────────────────────────────────────────

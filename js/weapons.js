@@ -381,28 +381,26 @@ window.WEAPONS = {
       }
 
       // Building collision (bounce for saws, destroy for bullets)
-      if (window.CITY && CITY.buildings) {
-        for (const b of CITY.buildings) {
-          if (Math.abs(p.x - b.x) < b.width / 2 + 0.5 &&
-              Math.abs(p.z - b.z) < b.depth / 2 + 0.5) {
-            if (p.type === 'saw' && p.bounces > 0) {
-              p.bounces--;
-              // Reflect — determine which face was hit
-              const relX = p.x - b.x;
-              const relZ = p.z - b.z;
-              if (Math.abs(relX / (b.width / 2)) > Math.abs(relZ / (b.depth / 2))) {
-                p.dx = -p.dx;
-              } else {
-                p.dz = -p.dz;
-              }
-              // Push out of building
-              p.x += p.dx * 2;
-              p.z += p.dz * 2;
+      if (window.CITY && CITY.checkWallCollision) {
+        const hitBuilding = CITY.checkWallCollision(p.x, p.z, 0.5);
+        if (hitBuilding) {
+          if (p.type === 'saw' && p.bounces > 0) {
+            p.bounces--;
+            // Reflect — determine which face was hit
+            const relX = p.x - hitBuilding.x;
+            const relZ = p.z - hitBuilding.z;
+            if (Math.abs(relX) > Math.abs(relZ)) {
+              p.dx = -p.dx;
             } else {
-              this._removeProjectile(i);
+              p.dz = -p.dz;
             }
-            break;
+            // Push out of building
+            p.x += p.dx * 2;
+            p.z += p.dz * 2;
+          } else {
+            this._removeProjectile(i);
           }
+          continue;
         }
       }
 

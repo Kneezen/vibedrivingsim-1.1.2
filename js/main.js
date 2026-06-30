@@ -31,6 +31,15 @@ window.GAME = {
   init() {
     UI.showLoading();
 
+    // Load assets first
+    if (window.ASSET_LOADER) {
+      ASSET_LOADER.init().then(() => this._continueInit());
+    } else {
+      this._continueInit();
+    }
+  },
+
+  _continueInit() {
     // Core systems
     SCENE.init();
     CITY.init();
@@ -147,6 +156,9 @@ window.GAME = {
 
     GAME.currentLevel = levelIndex;
     GAME.levelTransitioning = false;
+
+    // Set theme (Level 0 = Day, Level 1 = Night, etc.)
+    SCENE.setTheme(levelIndex % 2 === 0);
 
     const levelConfig = CONFIG.LEVELS[levelIndex];
     GAME.levelTimer = levelConfig.timeSeconds;

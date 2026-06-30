@@ -75,13 +75,9 @@ window.COINS = {
 
       // Check not inside a building
       let inBuilding = false;
-      if (CITY.buildings) {
-        for (const b of CITY.buildings) {
-          if (Math.abs(x - b.x) < b.width / 2 + 2 &&
-              Math.abs(z - b.z) < b.depth / 2 + 2) {
-            inBuilding = true;
-            break;
-          }
+      if (window.CITY && CITY.checkWallCollision) {
+        if (CITY.checkWallCollision(x, z, 2.0)) {
+          inBuilding = true;
         }
       }
       if (inBuilding) continue;
@@ -101,7 +97,8 @@ window.COINS = {
       // The PointLight was causing shader recompilation stutters when visibility changed.
       // We rely on the coin's emissive material for the glow effect instead.
 
-      group.position.set(x, C.HOVER_HEIGHT, z);
+      const coinY = window.CITY && window.CITY.getRoadHeight ? window.CITY.getRoadHeight(x, z) - 0.65 : 0;
+      group.position.set(x, coinY + C.HOVER_HEIGHT, z);
       SCENE.scene.add(group);
 
       this.coins.push({
@@ -141,7 +138,8 @@ window.COINS = {
       // ── Animate: spin + bounce ──────────────────────
       coin.mesh.rotation.y = this.time * C.SPIN_SPEED;
       const bounce = Math.sin(this.time * C.BOUNCE_SPEED + coin.phase) * C.BOUNCE_AMP;
-      coin.mesh.position.y = C.HOVER_HEIGHT + bounce;
+      const coinY = window.CITY && window.CITY.getRoadHeight ? window.CITY.getRoadHeight(coin.x, coin.z) - 0.65 : 0;
+      coin.mesh.position.y = coinY + C.HOVER_HEIGHT + bounce;
 
       // ── Collection check ────────────────────────────
       const dx = cx - coin.x;

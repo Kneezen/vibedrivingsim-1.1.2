@@ -41,15 +41,15 @@ window.CONFIG = {
   // ── Levels ──────────────────────────────────────────────
   LEVELS: [
     { level: 1,  coins: 5,   timeSeconds: 90  },
-    { level: 2,  coins: 8,   timeSeconds: 60  },
-    { level: 3,  coins: 12,  timeSeconds: 80  },
-    { level: 4,  coins: 16,  timeSeconds: 100 },
-    { level: 5,  coins: 20,  timeSeconds: 120 },
-    { level: 6,  coins: 25,  timeSeconds: 140 },
-    { level: 7,  coins: 30,  timeSeconds: 160 },
-    { level: 8,  coins: 36,  timeSeconds: 180 },
-    { level: 9,  coins: 42,  timeSeconds: 200 },
-    { level: 10, coins: 50,  timeSeconds: 220 },
+    { level: 2,  coins: 8,   timeSeconds: 120 },
+    { level: 3,  coins: 12,  timeSeconds: 150 },
+    { level: 4,  coins: 16,  timeSeconds: 180 },
+    { level: 5,  coins: 20,  timeSeconds: 210 },
+    { level: 6,  coins: 25,  timeSeconds: 240 },
+    { level: 7,  coins: 30,  timeSeconds: 270 },
+    { level: 8,  coins: 36,  timeSeconds: 300 },
+    { level: 9,  coins: 42,  timeSeconds: 330 },
+    { level: 10, coins: 50,  timeSeconds: 360 },
   ],
 
   // ── Coins ──────────────────────────────────────────────
@@ -70,7 +70,7 @@ window.CONFIG = {
     ACCELERATION: 1.3,      // acceleration multiplier
     HANDLING: 0.35,          // very poor turning
     CATCH_RADIUS: 4.5,      // distance to catch the player
-    SPAWN_DISTANCE: 45,     // spawn this far from player (lowered so it spawns closer)
+    SPAWN_DISTANCE: 20,     // spawn this far from player (lowered so it spawns closer)
     COLOR: 0x1144cc,         // dark blue body
     TRIM_COLOR: 0xffffff,   // white trim
     SIREN_INTERVAL: 0.4     // siren tone alternation (seconds)

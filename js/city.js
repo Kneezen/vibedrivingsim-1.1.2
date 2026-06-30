@@ -33,6 +33,7 @@ window.CITY = {
     const mesh = new THREE.Mesh(merged, mat);
     if (opts && opts.castShadow)    mesh.castShadow = true;
     if (opts && opts.receiveShadow) mesh.receiveShadow = true;
+    if (opts && opts.hideMesh)      mesh.visible = false;
     SCENE.scene.add(mesh);
     return mesh;
   },
@@ -73,12 +74,298 @@ window.CITY = {
   // ────────────────────────────────────────────────────
 
   init() {
-    this.createGround();
-    this.createRoadNetwork();
-    this.createBuildings();
-    this.createSidewalks();
-    this.createStreetLights();
+    // Clear procedural arrays
+    this.buildings = [];
+    this.roadNetwork = [];
+    this.intersections = [];
+    this.pedestrians = [];
+    this.mapMeshes = [];
+
+    // Collision & Height Grid
+    this.gridSize = 4;
+    this.mapHalfX = 250; // X: -250 to 250 (fits model perfectly)
+    this.mapHalfZ = 200; // Z: -200 to 200 (trimmed to fit model, was 250)
+    this.mapHalf = this.mapHalfX; // backwards compat for X lookups
+    this.gridColsX = Math.ceil((this.mapHalfX * 2) / this.gridSize);
+    this.gridColsZ = Math.ceil((this.mapHalfZ * 2) / this.gridSize);
+    this.gridCols = this.gridColsX; // keep for backwards compat with X-based code
+    this.totalCells = this.gridColsX * this.gridColsZ;
+    this.heightGrid = new Float32Array(this.totalCells);  // max height per cell
+    this.groundHeightGrid = new Float32Array(this.totalCells); // ground-level height
+    this.wallGrid = new Uint8Array(this.totalCells);      // 1 = building, 0 = drivable
+
+    // Add static map model
+    if (window.MODELS && window.MODELS['map']) {
+      const mapModel = window.MODELS['map'].clone();
+      
+      // New York City scale and offset (centered)
+      mapModel.scale.set(2, 2, 2);
+      mapModel.position.set(123.3, -0.5, -61.1); 
+      
+      // Update world matrix to accurately compute bounding boxes
+      mapModel.updateMatrixWorld(true);
+      
+      mapModel.traverse(child => {
+        if (child.isMesh) {
+          this.mapMeshes.push(child);
+        }
+      });
+      
+      SCENE.scene.add(mapModel);
+      
+      // Scan the map to build height and collision grids
+      this._buildCollisionGrid();
+    }
+    
+    // Add a road segment spanning the drivable area so coins/police can spawn
+    this.roadNetwork.push({
+      x: -this.mapHalfX, z: -this.mapHalfZ, w: this.mapHalfX * 2, h: this.mapHalfZ * 2, width: this.mapHalfX * 2, depth: this.mapHalfZ * 2
+    });
+    
+    // Create an invisible ground plane for basic physics/shadows if needed
+    const groundGeo = new THREE.PlaneGeometry(1000, 1000);
+    const groundMat = new THREE.MeshBasicMaterial({ visible: false });
+    this.groundMesh = new THREE.Mesh(groundGeo, groundMat);
+    this.groundMesh.rotation.x = -Math.PI / 2;
+    SCENE.scene.add(this.groundMesh);
+
+    // Spawn pedestrians on the new map
     this.createPedestrians();
+
+    // Spawn boundary walls
+    this.createBoundaryWalls();
+  },
+
+  createBoundaryWalls() {
+    // We will build a perimeter of tall skyscrapers to serve as the boundary walls
+    const palette = [0xc0a080, 0x8090b0, 0xa0b0c0, 0xb0c0d0, 0x909090, 0xd0c0b0, 0x7080a0];
+    const bodyBuckets = palette.map(() => []);
+    const windowGeos = [];
+
+    const addSkyscraper = (cx, cz, bw, bd, isNS) => {
+      const bh = 100 + Math.random() * 80;
+      const ci = Math.floor(Math.random() * palette.length);
+      bodyBuckets[ci].push(this._stamp(new THREE.BoxGeometry(bw, bh, bd), cx, bh / 2, cz));
+
+      // Windows
+      const floorH = 8;
+      const floors = Math.floor(bh / floorH);
+      const winCount = Math.floor((isNS ? bw : bd) / 6);
+      const winGeo = isNS ? new THREE.BoxGeometry(1.5, 2, 0.1) : new THREE.BoxGeometry(0.1, 2, 1.5);
+      
+      for (let f = 1; f < floors; f++) {
+        const wy = f * floorH;
+        for (let wi = 0; wi < winCount; wi++) {
+          if (Math.random() < 0.4) continue;
+          if (isNS) {
+            const wx = cx - bw / 2 + 3 + wi * 6;
+            // Face inwards
+            const wz = cz + (cz > 0 ? -bd/2 - 0.1 : bd/2 + 0.1);
+            windowGeos.push(this._stamp(winGeo, wx, wy, wz));
+          } else {
+            const wz = cz - bd / 2 + 3 + wi * 6;
+            // Face inwards
+            const wx = cx + (cx > 0 ? -bw/2 - 0.1 : bw/2 + 0.1);
+            windowGeos.push(this._stamp(winGeo, wx, wy, wz));
+          }
+        }
+      }
+    };
+
+    // North & South walls
+    for (let x = -this.mapHalfX; x <= this.mapHalfX; x += 30) {
+      addSkyscraper(x, -this.mapHalfZ - 10, 30, 20, true);
+      addSkyscraper(x, this.mapHalfZ + 10, 30, 20, true);
+    }
+
+    // East & West walls
+    for (let z = -this.mapHalfZ; z <= this.mapHalfZ; z += 30) {
+      addSkyscraper(this.mapHalfX + 10, z, 20, 30, false);
+      addSkyscraper(-this.mapHalfX - 10, z, 20, 30, false);
+    }
+
+    // Merge each colour bucket into one mesh
+    palette.forEach((color, i) => {
+      if (bodyBuckets[i].length > 0) {
+        this._mergeMesh(bodyBuckets[i],
+          new THREE.MeshLambertMaterial({ color: color }),
+          { castShadow: true, receiveShadow: true });
+      }
+    });
+
+    // Windows (emissive)
+    if (windowGeos.length > 0) {
+      this._mergeMesh(windowGeos,
+        new THREE.MeshLambertMaterial({ color: 0xffffcc, emissive: 0xffeeaa, emissiveIntensity: 0.6 }),
+        {});
+    }
+  },
+
+  _buildCollisionGrid() {
+    if (this.mapMeshes.length === 0) return;
+    
+    // ── Building-Only Collision System ──────────────────────────────────
+    // Strategy: scan every triangle, track the MAX height per grid cell.
+    // If a cell's max height exceeds BUILDING_THRESHOLD, it's a building → solid wall.
+    // Everything else (roads, lamps, trees, benches) → completely drivable, zero collision.
+    // Ground height is tracked separately using only low, flat surfaces.
+    
+    const BUILDING_THRESHOLD = 40; // world-space meters; buildings are 40m+ tall
+    
+    console.log("Building collision grid (building-only mode)...");
+    const startTime = performance.now();
+
+    // Initialize grids
+    for (let i = 0; i < this.heightGrid.length; i++) {
+      this.heightGrid[i] = -9999;         // track max height per cell
+      this.groundHeightGrid[i] = -9999;   // track ground-level height
+      this.wallGrid[i] = 0;               // default: drivable
+    }
+    
+    const vA = new THREE.Vector3();
+    const vB = new THREE.Vector3();
+    const vC = new THREE.Vector3();
+
+    // Pass 1: Scan every triangle to find max height and ground height per cell
+    for (const mesh of this.mapMeshes) {
+      if (!mesh.geometry || !mesh.geometry.isBufferGeometry) continue;
+
+      mesh.updateMatrixWorld(true);
+      const posAttribute = mesh.geometry.attributes.position;
+      const index = mesh.geometry.index;
+      
+      if (!posAttribute) continue;
+
+      const numTriangles = index ? index.count / 3 : posAttribute.count / 3;
+
+      for (let i = 0; i < numTriangles; i++) {
+        let a, b, c;
+        if (index) {
+          a = index.getX(i * 3);
+          b = index.getX(i * 3 + 1);
+          c = index.getX(i * 3 + 2);
+        } else {
+          a = i * 3; b = i * 3 + 1; c = i * 3 + 2;
+        }
+
+        vA.fromBufferAttribute(posAttribute, a).applyMatrix4(mesh.matrixWorld);
+        vB.fromBufferAttribute(posAttribute, b).applyMatrix4(mesh.matrixWorld);
+        vC.fromBufferAttribute(posAttribute, c).applyMatrix4(mesh.matrixWorld);
+
+        const triMaxY = Math.max(vA.y, vB.y, vC.y);
+        const triMinY = Math.min(vA.y, vB.y, vC.y);
+
+        // Face normal (for detecting flat surfaces)
+        const cb = new THREE.Vector3().subVectors(vC, vB);
+        const ab = new THREE.Vector3().subVectors(vA, vB);
+        const normal = cb.cross(ab).normalize();
+        const isFlat = Math.abs(normal.y) > 0.7;
+
+        // Bounding box of this triangle in grid space
+        const minX = Math.min(vA.x, vB.x, vC.x);
+        const maxX = Math.max(vA.x, vB.x, vC.x);
+        const minZ = Math.min(vA.z, vB.z, vC.z);
+        const maxZ = Math.max(vA.z, vB.z, vC.z);
+
+        const minCx = Math.max(0, Math.floor((minX + this.mapHalfX) / this.gridSize));
+        const maxCx = Math.min(this.gridColsX - 1, Math.floor((maxX + this.mapHalfX) / this.gridSize));
+        const minCz = Math.max(0, Math.floor((minZ + this.mapHalfZ) / this.gridSize));
+        const maxCz = Math.min(this.gridColsZ - 1, Math.floor((maxZ + this.mapHalfZ) / this.gridSize));
+
+        for (let cX = minCx; cX <= maxCx; cX++) {
+          for (let cZ = minCz; cZ <= maxCz; cZ++) {
+            const idx = cX + cZ * this.gridColsX;
+
+            // Track the tallest thing in this cell
+            if (triMaxY > this.heightGrid[idx]) {
+              this.heightGrid[idx] = triMaxY;
+            }
+
+            // Track ground height: only flat surfaces near road level (below 5m)
+            // This prevents lamp tops and tree canopies from being treated as ground
+            if (isFlat && triMaxY < 5.0) {
+              if (triMaxY > this.groundHeightGrid[idx]) {
+                this.groundHeightGrid[idx] = triMaxY;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Pass 2: Classify cells — buildings vs drivable
+    let wallCount = 0;
+    let drivableCount = 0;
+    for (let i = 0; i < this.wallGrid.length; i++) {
+      if (this.heightGrid[i] > BUILDING_THRESHOLD) {
+        this.wallGrid[i] = 1; // BUILDING — solid, impenetrable
+        wallCount++;
+      } else {
+        this.wallGrid[i] = 0; // Everything else — completely drivable
+        drivableCount++;
+      }
+    }
+
+    // Build buildings list for minimap / debug
+    this.buildings = [];
+    for (let cX = 0; cX < this.gridColsX; cX++) {
+      for (let cZ = 0; cZ < this.gridColsZ; cZ++) {
+        const idx = cX + cZ * this.gridColsX;
+        if (this.wallGrid[idx] === 1) {
+          const x = -this.mapHalfX + cX * this.gridSize + this.gridSize / 2;
+          const z = -this.mapHalfZ + cZ * this.gridSize + this.gridSize / 2;
+          this.buildings.push({
+            x: x, z: z, width: this.gridSize, depth: this.gridSize
+          });
+        }
+      }
+    }
+    
+    console.log(`Collision grid built in ${(performance.now() - startTime).toFixed(0)}ms — ${wallCount} building cells, ${drivableCount} drivable cells`);
+  },
+
+  getRoadHeight(x, z) {
+    if (this.mapMeshes.length === 0) return 0.65;
+    
+    const cX = Math.floor((x + this.mapHalfX) / this.gridSize);
+    const cZ = Math.floor((z + this.mapHalfZ) / this.gridSize);
+    
+    if (cX >= 0 && cX < this.gridColsX && cZ >= 0 && cZ < this.gridColsZ) {
+      const idx = cX + cZ * this.gridColsX;
+      if (this.groundHeightGrid[idx] > -9999) {
+        return this.groundHeightGrid[idx] + 0.65;
+      }
+    }
+    
+    return 0.65; // fallback
+  },
+
+  checkWallCollision(x, z, radius) {
+    if (this.mapMeshes.length === 0) return null;
+    
+    const offsets = [
+      [-radius, -radius], [radius, -radius],
+      [-radius, radius], [radius, radius]
+    ];
+    
+    for (let off of offsets) {
+      const cx = x + off[0];
+      const cz = z + off[1];
+      const cX = Math.floor((cx + this.mapHalfX) / this.gridSize);
+      const cZ = Math.floor((cz + this.mapHalfZ) / this.gridSize);
+      
+      if (cX < 0 || cX >= this.gridColsX || cZ < 0 || cZ >= this.gridColsZ) {
+        return { x: 0, z: 0 }; // map boundary
+      }
+      
+      const idx = cX + cZ * this.gridColsX;
+      if (this.wallGrid[idx] === 1) {
+        const blockX = -this.mapHalfX + cX * this.gridSize + this.gridSize / 2;
+        const blockZ = -this.mapHalfZ + cZ * this.gridSize + this.gridSize / 2;
+        return { x: blockX, z: blockZ };
+      }
+    }
+    return null;
   },
 
   // ────────────────────────────────────────────────────
@@ -315,6 +602,8 @@ window.CITY = {
     let   lightCount = 0;
     const MAX_POINT_LIGHTS = 30;
 
+    this.streetLights = [];
+
     const add = (x, z) => {
       if (this.isOnRoad(x, z)) return; // Prevents streetlights from spawning in the middle of intersections/roads
       
@@ -327,10 +616,11 @@ window.CITY = {
 
       // Only add actual PointLights sparingly
       if (lightCount < MAX_POINT_LIGHTS) {
-        const light = new THREE.PointLight(0xfffaaa, 0.6, 35);
+        const light = new THREE.PointLight(0xffffff, 0.8, 35);
         light.position.set(x, 8.3, z);
         light.castShadow = false;
         SCENE.scene.add(light);
+        this.streetLights.push(light);
         lightCount++;
       }
     };
@@ -349,7 +639,7 @@ window.CITY = {
     });
 
     this._mergeMesh(poleGeos, new THREE.MeshLambertMaterial({ color: 0x555555 }), {});
-    this._mergeMesh(headGeos, new THREE.MeshLambertMaterial({ color: 0xffff88, emissive: 0xffff44, emissiveIntensity: 0.5 }), {});
+    this._mergeMesh(headGeos, new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 }), {});
   },
 
   // ────────────────────────────────────────────────────
@@ -357,20 +647,46 @@ window.CITY = {
   // ────────────────────────────────────────────────────
 
   isOnRoad(x, z) {
-    const buf = 1;
-    return this.roadNetwork.some(r =>
-      x >= r.x - buf && x <= r.x + r.w + buf &&
-      z >= r.z - buf && z <= r.z + r.h + buf
-    );
+    if (this.wallGrid) {
+      const cX = Math.floor((x + this.mapHalfX) / this.gridSize);
+      const cZ = Math.floor((z + this.mapHalfZ) / this.gridSize);
+      if (cX >= 0 && cX < this.gridColsX && cZ >= 0 && cZ < this.gridColsZ) {
+        return this.wallGrid[cX + cZ * this.gridColsX] === 0;
+      }
+    }
+    return true; // fallback
   },
 
   getValidSpawnPoint() {
-    for (const r of this.roadNetwork) {
-      const cx = r.x + r.w / 2;
-      const cz = r.z + r.h / 2;
-      if (this.isOnRoad(cx, cz)) return { x: cx, z: cz };
+    if (!this.wallGrid) return { x: 0, z: 0 };
+    
+    // Search from the center outwards for a valid road/ground cell
+    const centerCX = Math.floor(this.gridColsX / 2);
+    const centerCZ = Math.floor(this.gridColsZ / 2);
+    const maxRadius = Math.max(this.gridColsX, this.gridColsZ) / 2;
+    
+    for (let radius = 0; radius < maxRadius; radius++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+          if (Math.abs(dx) !== radius && Math.abs(dz) !== radius) continue; 
+          
+          const cX = centerCX + dx;
+          const cZ = centerCZ + dz;
+          
+          if (cX >= 0 && cX < this.gridColsX && cZ >= 0 && cZ < this.gridColsZ) {
+            const idx = cX + cZ * this.gridColsX;
+            // Valid if it's not a building and has a valid ground surface
+            if (this.wallGrid[idx] === 0 && this.groundHeightGrid[idx] > -9999) {
+              const x = -this.mapHalfX + cX * this.gridSize + this.gridSize / 2;
+              const z = -this.mapHalfZ + cZ * this.gridSize + this.gridSize / 2;
+              return { x, z };
+            }
+          }
+        }
+      }
     }
-    return { x: 0, z: 0 };
+    
+    return { x: 0, z: 0 }; // Fallback
   },
 
   // ────────────────────────────────────────────────────
@@ -415,37 +731,36 @@ window.CITY = {
     const tempScale = new THREE.Vector3(1, 1, 1);
     const tempColor = new THREE.Color();
 
-    while (placed < count && attempts < 3000) {
+    while (placed < count && attempts < 5000) {
       attempts++;
-      const x = -half + Math.random() * CONFIG.MAP_SIZE;
-      const z = -half + Math.random() * CONFIG.MAP_SIZE;
+      const x = -this.mapHalfX + Math.random() * (this.mapHalfX * 2);
+      const z = -this.mapHalfZ + Math.random() * (this.mapHalfZ * 2);
       
-      // 1. Must not be on a road
-      if (this.isOnRoad(x, z)) continue;
+      // Must be on drivable ground (not a building) with valid ground height
+      const cX = Math.floor((x + this.mapHalfX) / this.gridSize);
+      const cZ = Math.floor((z + this.mapHalfZ) / this.gridSize);
+      if (cX < 0 || cX >= this.gridColsX || cZ < 0 || cZ >= this.gridColsZ) continue;
       
-      // 2. Must not be inside a building
-      let inBuilding = false;
-      for (const b of this.buildings) {
-        if (Math.abs(x - b.x) < b.width / 2 + 0.5 && Math.abs(z - b.z) < b.depth / 2 + 0.5) {
-          inBuilding = true;
-          break;
+      const idx = cX + cZ * this.gridColsX;
+      if (this.wallGrid[idx] === 1) continue; // inside a building
+      if (this.groundHeightGrid[idx] <= -9999) continue; // no ground here
+      
+      // Must be near a building edge (sidewalk area) — check if any neighbor is a building
+      let nearBuilding = false;
+      for (let ox = -2; ox <= 2; ox++) {
+        for (let oz = -2; oz <= 2; oz++) {
+          if (ox === 0 && oz === 0) continue;
+          const nx = cX + ox, nz = cZ + oz;
+          if (nx >= 0 && nx < this.gridColsX && nz >= 0 && nz < this.gridColsZ) {
+            if (this.wallGrid[nx + nz * this.gridColsX] === 1) {
+              nearBuilding = true;
+              break;
+            }
+          }
         }
+        if (nearBuilding) break;
       }
-      if (inBuilding) continue;
-
-      // 3. Must be close to a road (on the sidewalk)
-      let nearRoad = false;
-      for (const r of this.roadNetwork) {
-        const dx = Math.max(r.x - x, 0, x - (r.x + r.w));
-        const dz = Math.max(r.z - z, 0, z - (r.z + r.h));
-        const dist = Math.sqrt(dx*dx + dz*dz);
-        // Sidewalk is near the road, distance between 0 and 4
-        if (dist > 0.5 && dist < 4.0) { 
-          nearRoad = true;
-          break;
-        }
-      }
-      if (!nearRoad) continue;
+      if (!nearBuilding) continue;
 
       // Valid position!
       const cIdx = Math.floor(Math.random() * colors.length);
@@ -465,12 +780,13 @@ window.CITY = {
         time: Math.random() * 100
       });
 
-      tempPos.set(x, 0.6, z);
+      const groundY = this.getRoadHeight(x, z) - 0.65; // strip the car offset
+      tempPos.set(x, groundY + 0.6, z);
       tempQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
       tempMatrix.compose(tempPos, tempQuat, tempScale);
       this.pedBodyMesh.setMatrixAt(placed, tempMatrix);
       
-      tempPos.set(x, 1.4, z);
+      tempPos.set(x, groundY + 1.4, z);
       tempMatrix.compose(tempPos, tempQuat, tempScale);
       this.pedHeadMesh.setMatrixAt(placed, tempMatrix);
       
@@ -534,20 +850,21 @@ window.CITY = {
       if (distToCar < 3.2 && carSpeed > 0.05) { 
         p.isDead = true;
         
-        // Squish them visually (sidewalk is at y=0.3)
+        // Reveal blood pool
+        const terrainHeight = this.getRoadHeight(p.x, p.z) - 0.65;
+        
         tempScale.set(1.8, 0.05, 1.8);
-        tempPos.set(p.x, 0.35, p.z);
+        tempPos.set(p.x, terrainHeight + 0.35, p.z);
         tempQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.heading);
         tempMatrix.compose(tempPos, tempQuat, tempScale);
         this.pedBodyMesh.setMatrixAt(p.idx, tempMatrix);
         
-        tempPos.set(p.x, 0.35, p.z);
+        tempPos.set(p.x, terrainHeight + 0.35, p.z);
         tempMatrix.compose(tempPos, tempQuat, tempScale);
         this.pedHeadMesh.setMatrixAt(p.idx, tempMatrix);
         
-        // Reveal blood pool
         tempScale.set(1 + Math.random(), 1, 1 + Math.random());
-        tempPos.set(p.x, 0.31, p.z);
+        tempPos.set(p.x, terrainHeight + 0.31, p.z);
         tempQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * Math.PI);
         tempMatrix.compose(tempPos, tempQuat, tempScale);
         this.bloodMesh.setMatrixAt(p.idx, tempMatrix);
@@ -580,18 +897,18 @@ window.CITY = {
       }
       
       // Pathfinding / Environment check
-      const half = CONFIG.MAP_SIZE / 2 - 2;
       let hit = false;
       
-      if (nextX > half || nextX < -half || nextZ > half || nextZ < -half) hit = true;
-      if (!hit && this.isOnRoad(nextX, nextZ)) hit = true;
+      if (nextX > this.mapHalfX - 5 || nextX < -this.mapHalfX + 5 || nextZ > this.mapHalfZ - 5 || nextZ < -this.mapHalfZ + 5) hit = true;
       
+      // Check if next position is inside a building
       if (!hit) {
-        for (const b of this.buildings) {
-          if (Math.abs(nextX - b.x) < b.width / 2 + 0.6 && Math.abs(nextZ - b.z) < b.depth / 2 + 0.6) {
-            hit = true;
-            break;
-          }
+        const gX = Math.floor((nextX + this.mapHalfX) / this.gridSize);
+        const gZ = Math.floor((nextZ + this.mapHalfZ) / this.gridSize);
+        if (gX >= 0 && gX < this.gridColsX && gZ >= 0 && gZ < this.gridColsZ) {
+          if (this.wallGrid[gX + gZ * this.gridColsX] === 1) hit = true;
+        } else {
+          hit = true;
         }
       }
 
@@ -606,14 +923,16 @@ window.CITY = {
       // Matrix update for walking animation
       const bounceMult = p.isPanicking ? 0.35 : 0.15;
       const bounce = Math.abs(Math.sin(p.time)) * bounceMult;
+      const terrainHeight = this.getRoadHeight(p.x, p.z) - 0.65; // get raw road y
+      
       tempScale.set(1, 1, 1);
       tempQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.heading);
       
-      tempPos.set(p.x, 0.6 + bounce, p.z);
+      tempPos.set(p.x, terrainHeight + 0.6 + bounce, p.z);
       tempMatrix.compose(tempPos, tempQuat, tempScale);
       this.pedBodyMesh.setMatrixAt(p.idx, tempMatrix);
       
-      tempPos.set(p.x, 1.4 + bounce, p.z);
+      tempPos.set(p.x, terrainHeight + 1.4 + bounce, p.z);
       tempMatrix.compose(tempPos, tempQuat, tempScale);
       this.pedHeadMesh.setMatrixAt(p.idx, tempMatrix);
       
@@ -658,12 +977,14 @@ window.CITY = {
       tempQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.heading);
 
       // Restore body
-      tempPos.set(p.x, 0.6, p.z);
+      const terrainHeight = this.getRoadHeight(p.x, p.z) - 0.65;
+      
+      tempPos.set(p.x, terrainHeight + 0.6, p.z);
       tempMatrix.compose(tempPos, tempQuat, tempScale);
       this.pedBodyMesh.setMatrixAt(p.idx, tempMatrix);
 
       // Restore head
-      tempPos.set(p.x, 1.4, p.z);
+      tempPos.set(p.x, terrainHeight + 1.4, p.z);
       tempMatrix.compose(tempPos, tempQuat, tempScale);
       this.pedHeadMesh.setMatrixAt(p.idx, tempMatrix);
 

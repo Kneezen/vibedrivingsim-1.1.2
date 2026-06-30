@@ -235,27 +235,20 @@ class CarEntity {
 
     let collided = false;
 
-    // Boundary clamp
-    const bound = 245;
-    if (centerX > bound || centerX < -bound || centerZ > bound || centerZ < -bound) {
+    // Boundary clamp (X: ±245, Z: ±195 to match trimmed map)
+    const boundX = 245;
+    const boundZ = 195;
+    if (centerX > boundX || centerX < -boundX || centerZ > boundZ || centerZ < -boundZ) {
       collided = true;
     }
 
     // ── Building collision ───────────────────────
-    const carHW = 1.9;
-    const carHD = 3.8;
     let hitBuilding = null;
 
-    if (!collided && window.CITY && CITY.buildings) {
-      for (const b of CITY.buildings) {
-        const bHW = b.width / 2 + carHW;
-        const bHD = b.depth / 2 + carHD;
-        if (centerX > b.x - bHW && centerX < b.x + bHW &&
-            centerZ > b.z - bHD && centerZ < b.z + bHD) {
-          collided = true;
-          hitBuilding = b;
-          break;
-        }
+    if (!collided && window.CITY && CITY.checkWallCollision) {
+      hitBuilding = CITY.checkWallCollision(centerX, centerZ, 2.0); // building collision radius
+      if (hitBuilding) {
+        collided = true;
       }
     }
 
@@ -282,6 +275,7 @@ class CarEntity {
 
     this.position.x = newX;
     this.position.z = newZ;
+    this.position.y = window.CITY && CITY.getRoadHeight ? CITY.getRoadHeight(newX, newZ) : 0.65;
 
     // ──────────────────────────────────────────────
     //  5. VISUAL — BODY DYNAMICS
@@ -608,6 +602,7 @@ class CarEntity {
   setPosition(x, z) {
     this.position.x  = x;
     this.position.z  = z;
+    this.position.y  = window.CITY && CITY.getRoadHeight ? CITY.getRoadHeight(x, z) : 0.65;
     this.heading     = 0;
     this.speed       = 0;
     this.steerInput  = 0;

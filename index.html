@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="3D Web Driving Simulator — explore a procedurally generated city in your browser.">
-  <title>Driving Simulator</title>
+  <title>Vibe Driving Sim</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -30,7 +30,7 @@
       
       <!-- Sidebar / Navigation -->
       <div class="menu-sidebar">
-        <h1 class="menu-title">🏙️ DRIVE SIM</h1>
+        <h1 class="menu-title">🏙️ Vibe Driving Sim</h1>
         <nav class="menu-nav">
           <button class="nav-btn active" data-tab="play">PLAY</button>
           <button class="nav-btn" data-tab="arsenal">ARSENAL</button>
@@ -75,6 +75,10 @@
             <input type="range" id="setting-music" min="0" max="1" step="0.05" value="0.5">
           </div>
           
+          <div class="setting-row" style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
+            <button id="reset-progress-btn" style="background:#ff4444; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">RESET ALL PROGRESS</button>
+          </div>
+          
         </div>
 
       </div>
@@ -97,10 +101,26 @@
     <span>Loading...</span>
   </div>
 
+  <!-- How to Play Modal -->
+  <div id="how-to-play-modal" style="display:none;">
+    <div class="how-to-play-container">
+      <h1 class="htp-title">HOW TO PLAY</h1>
+      <div class="htp-content">
+        <p>🚗 <strong>Drive & Collect:</strong> Collect all coins scattered around the map to complete the level!</p>
+        <p>🔓 <strong>Unlock Arsenal:</strong> Beating levels will unlock powerful new weapons to use.</p>
+        <p>⚠️ <strong>Caution:</strong> Running over pedestrians will eventually spawn relentless Police cars! The more you crush, the harder they chase.</p>
+        <p>🚓 <strong>Survive:</strong> Use your weapons and driving skills to evade or destroy the Police.</p>
+      </div>
+      <button id="lets-play-btn" class="htp-btn">LET'S PLAY!</button>
+    </div>
+  </div>
+
   <!-- Three.js from CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/loaders/GLTFLoader.js"></script>
 
   <!-- Application scripts (order matters) -->
+  <script src="js/assetLoader.js" defer></script>
   <script src="js/config.js" defer></script>
   <script src="js/scene.js" defer></script>
   <script src="js/city.js" defer></script>
